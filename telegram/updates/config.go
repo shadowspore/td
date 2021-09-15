@@ -32,6 +32,19 @@ type Config struct {
 	AccessHasher ChannelAccessHasher
 	// Logger (optional).
 	Logger *zap.Logger
+	// DisableShorts disables receiving incomplete types of updates:
+	//   *tg.UpdateShort
+	//   *tg.UpdateShortMessage
+	//   *tg.UpdateShortChatMessage
+	//
+	// Instead, we execute updates.getDifference on each such update.
+	//
+	// Note:
+	// Most likely it does not save from incomplete updates entirely,
+	// because server can send *tg.Update without Chat or User.
+	//
+	// TODO: Implement incomplete update checker, entity cache interface.
+	DisableShorts bool
 }
 
 func (cfg *Config) setDefaults() {

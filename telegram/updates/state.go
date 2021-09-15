@@ -50,6 +50,7 @@ type state struct {
 	hasher    ChannelAccessHasher
 	selfID    int64
 	diffLim   int
+	noShorts  bool
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -70,6 +71,7 @@ type stateConfig struct {
 	Hasher           ChannelAccessHasher
 	SelfID           int64
 	DiffLimit        int
+	DisableShorts    bool
 }
 
 func newState(ctx context.Context, cfg stateConfig) *state {
@@ -91,6 +93,7 @@ func newState(ctx context.Context, cfg stateConfig) *state {
 		hasher:    cfg.Hasher,
 		selfID:    cfg.SelfID,
 		diffLim:   cfg.DiffLimit,
+		noShorts:  cfg.DisableShorts,
 
 		ctx:    ctx,
 		cancel: cancel,
@@ -187,16 +190,32 @@ func (s *state) handleUpdates(ctx context.Context, u tg.UpdatesClass) error {
 		s.saveChannelHashes(u.Chats)
 		return s.handleSeq(ctx, u)
 	case *tg.UpdateShort:
+		if s.noShorts {
+			return s.getDifference()
+		}
+
 		return s.handleUpdates(ctx, &tg.UpdatesCombined{
 			Updates: []tg.UpdateClass{u.Update},
 			Date:    u.Date,
 		})
 	case *tg.UpdateShortMessage:
+		if s.noShorts {
+			return s.getDifference()
+		}
+
 		return s.handleUpdates(ctx, s.convertShortMessage(u))
 	case *tg.UpdateShortChatMessage:
+		if s.noShorts {
+			return s.getDifference()
+		}
+
 		return s.handleUpdates(ctx, s.convertShortChatMessage(u))
 	case *tg.UpdateShortSentMessage:
-		return s.handleUpdates(ctx, s.convertShortSentMessage(u))
+		short := s.convertShortSentMessage(u)
+		return s.handleUpdates(ctx, &tg.UpdatesCombined{
+			Updates: []tg.UpdateClass{short.Update},
+			Date:    short.Date,
+		})
 	case *tg.UpdatesTooLong:
 		return s.getDifference()
 	default:

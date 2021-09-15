@@ -109,6 +109,7 @@ func (m *Manager) Auth(ctx context.Context, client RawClient, userID int64, isBo
 		Hasher:           m.cfg.AccessHasher,
 		SelfID:           userID,
 		DiffLimit:        diffLim,
+		DisableShorts:    m.cfg.DisableShorts,
 	})
 	go m.state.Run()
 	return nil
