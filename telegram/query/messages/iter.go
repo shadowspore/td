@@ -6,15 +6,15 @@ import (
 
 	"golang.org/x/xerrors"
 
-	"github.com/gotd/td/telegram/message/peer"
 	"github.com/gotd/td/tg"
 )
 
 // Elem is a message iterator element.
 type Elem struct {
-	Msg      tg.NotEmptyMessage
-	Peer     tg.InputPeerClass
-	Entities peer.Entities
+	Msg   tg.NotEmptyMessage
+	Peer  tg.InputPeerClass
+	Users []tg.UserClass
+	Chats []tg.ChatClass
 }
 
 // Iterator is a message stream iterator.
@@ -83,26 +83,27 @@ func (m *Iterator) apply(r tg.MessagesMessagesClass) error {
 
 	var (
 		messages tg.MessageClassArray
-		entities peer.Entities
+		chats    []tg.ChatClass
+		users    []tg.UserClass
 	)
 	switch msgs := r.(type) {
 	case *tg.MessagesMessages: // messages.messages#8c718e87
 		messages = msgs.Messages
-		entities = peer.EntitiesFromResult(msgs)
-
+		chats = msgs.Chats
+		users = msgs.Users
 		m.count = len(messages)
 		m.lastBatch = true
 	case *tg.MessagesMessagesSlice: // messages.messagesSlice#3a54685e
 		messages = msgs.Messages
-		entities = peer.EntitiesFromResult(msgs)
-
+		chats = msgs.Chats
+		users = msgs.Users
 		m.offsetRate = msgs.NextRate
 		m.count = msgs.Count
 		m.lastBatch = len(msgs.Messages) < m.limit
 	case *tg.MessagesChannelMessages: // messages.channelMessages#64479808
 		messages = msgs.Messages
-		entities = peer.EntitiesFromResult(msgs)
-
+		chats = msgs.Chats
+		users = msgs.Users
 		m.count = msgs.Count
 		m.lastBatch = len(msgs.Messages) < m.limit
 	default: // messages.messagesNotModified#74535f21
@@ -148,8 +149,8 @@ func (m *Iterator) apply(r tg.MessagesMessagesClass) error {
 	if nonEmpty, ok := msg.AsNotEmpty(); ok {
 		m.offsetDate = nonEmpty.GetDate()
 
-		p, err := entities.ExtractPeer(nonEmpty.GetPeerID())
-		if err == nil {
+		p, ok := extractPeer(nonEmpty.GetPeerID(), users, chats)
+		if ok {
 			m.offsetPeer = p
 		}
 	}
@@ -162,15 +163,16 @@ func (m *Iterator) apply(r tg.MessagesMessagesClass) error {
 			continue
 		}
 
-		msgPeer, err := entities.ExtractPeer(nonEmpty.GetPeerID())
-		if err != nil {
+		msgPeer, ok := extractPeer(nonEmpty.GetPeerID(), users, chats)
+		if ok {
 			msgPeer = &tg.InputPeerEmpty{}
 		}
 
 		m.buf = append(m.buf, Elem{
-			Msg:      nonEmpty,
-			Peer:     msgPeer,
-			Entities: entities,
+			Msg:   nonEmpty,
+			Peer:  msgPeer,
+			Users: users,
+			Chats: chats,
 		})
 	}
 
@@ -266,4 +268,51 @@ func (m *Iterator) Value() Elem {
 // Err returns the error, if any, that was encountered during iteration.
 func (m *Iterator) Err() error {
 	return m.lastErr
+}
+
+func extractPeer(peer tg.PeerClass, users []tg.UserClass, chats []tg.ChatClass) (tg.InputPeerClass, bool) {
+	switch peer := peer.(type) {
+	case *tg.PeerUser:
+		for _, u := range users {
+			if u.GetID() == peer.UserID {
+				if u, ok := u.(*tg.User); ok {
+					return &tg.InputPeerUser{
+						UserID:     u.ID,
+						AccessHash: u.AccessHash,
+					}, true
+				}
+
+				return nil, false
+			}
+		}
+
+	case *tg.PeerChat:
+		for _, c := range chats {
+			if c.GetID() == peer.ChatID {
+				if c, ok := c.(*tg.Chat); ok {
+					return &tg.InputPeerChat{
+						ChatID: c.ID,
+					}, true
+				}
+
+				return nil, false
+			}
+		}
+
+	case *tg.PeerChannel:
+		for _, c := range chats {
+			if c.GetID() == peer.ChannelID {
+				if c, ok := c.(*tg.Channel); ok {
+					return &tg.InputPeerChannel{
+						ChannelID:  c.ID,
+						AccessHash: c.AccessHash,
+					}, true
+				}
+
+				return nil, false
+			}
+		}
+	}
+
+	return nil, false
 }

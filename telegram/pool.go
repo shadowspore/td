@@ -113,6 +113,22 @@ func (c *Client) DC(ctx context.Context, dc int, max int64) (CloseInvoker, error
 	return c.dc(ctx, dc, max, c.primaryDC(dc))
 }
 
+type nopCloseInvoker struct {
+	tg.Invoker
+}
+
+func (nopCloseInvoker) Close() error { return nil }
+
+// ConnectDC creates connection invoker to given DC.
+// Returns current active connection for primary dc.
+func (c *Client) ConnectDC(ctx context.Context, dc int) (CloseInvoker, error) {
+	if c.session.Load().DC == dc {
+		return nopCloseInvoker{c}, nil
+	}
+
+	return c.dc(ctx, dc, 1, c.primaryDC(dc))
+}
+
 // MediaOnly creates new multi-connection invoker to given DC ID.
 // It connects to MediaOnly DCs.
 func (c *Client) MediaOnly(ctx context.Context, dc int, max int64) (CloseInvoker, error) {
